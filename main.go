@@ -2,26 +2,61 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
 	"time"
 )
 
 const (
 	maxRoutines = 3
+	queuePath   = "queue"
 )
+
+// ListenDir vérifie le contenu d'un répertoire et transmet l'ID extrait du fichier.
+func ListenDir(jobsStarted chan string) {
+	reg, _ := regexp.Compile(`^job:([0-9]+):process$`)
+
+	exit := false
+	for !exit {
+		err := filepath.Walk(queuePath, func(pathGiven string, info os.FileInfo, _ error) (_ error) {
+			if info == nil {
+				return
+			}
+			if info.IsDir() {
+				return
+			}
+			file := path.Base(pathGiven)
+			if file == "exit" {
+				// Arrêt du processus d'alimentation
+				exit = true
+			}
+			if v := reg.FindAllStringSubmatch(file, 1); v != nil {
+				// On alimente le canal des messages
+				jobsStarted <- v[0][1]
+				err := os.Remove(pathGiven)
+				if err != nil {
+					return fmt.Errorf("Unable to remome message %s. %s", pathGiven, err)
+				}
+			}
+			return
+		})
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+	close(jobsStarted)
+
+}
 
 func main() {
 
-	jobsStarted := make(chan int)
-	jobsDone := make(chan int, maxRoutines)
+	jobsStarted := make(chan string)
+	jobsDone := make(chan bool, maxRoutines)
 
-	go func() {
-		// On alimente le canal des messages
-		for i := 1; i <= 10; i++ {
-			jobsStarted <- i
-			fmt.Printf("%d ", i)
-		}
-		close(jobsStarted)
-	}()
+	go ListenDir(jobsStarted)
 
 	jobs := 0
 	for {
@@ -34,10 +69,10 @@ func main() {
 			}
 
 			// On démarre la tache en parallèle avec le message
-			go func(value int) {
-				fmt.Printf("(%d)", i)
+			go func(value string) {
+				fmt.Printf("(%s)", value)
 				time.Sleep(time.Second)
-				jobsDone <- value
+				jobsDone <- true
 			}(i)
 
 			// On indique qu'on a démarré 1 tache de plus.
@@ -46,13 +81,11 @@ func main() {
 			// On a atteint la limite du nombre tâches
 
 			// On attend qu'une tache se libère
-			id, ok := <-jobsDone
+			_, ok := <-jobsDone
 			if !ok {
 				// Ce cas ne devrait pas apparaitre, car l'alimentation tarira avant pour sortir de la boucle.
 				break
 			}
-			// On informe que la tache I est terminé.
-			fmt.Printf("(*%d*)\n", id)
 
 			// Le job s'est libéré. On pourra en démarrer 1 nouveau
 			jobs--
@@ -61,10 +94,7 @@ func main() {
 
 	// Attendre la fin des derniers jobs
 	for jobs != 0 {
-		id := <-jobsDone
-
-		// On informe que la tache I est terminé.
-		fmt.Printf("(*%d*)\n", id)
+		<-jobsDone
 
 		// Le job s'est libéré.
 		jobs--
