@@ -95,6 +95,8 @@ func main() {
 	go ListenDir(jobsStarted)
 
 	jobs := 0
+
+	fmt.Println("Create a 'queue' directory where you run the program and put one or more files in it. Only formatted files with 'job:xx:process' and 'exit' will be treated.")
 	for {
 		if jobs < maxRoutines {
 			// On peut lancer une routine tant qu'on est inférieur à maxRoutine
@@ -135,5 +137,5 @@ func main() {
 	// On ferme le channel de fin d'execution par propreté
 	close(jobsDone)
 
-	fmt.Println("Fin du programme")
+	fmt.Println("Done")
 }
