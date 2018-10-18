@@ -51,6 +51,13 @@ func ListenDir(jobsStarted chan string) {
 
 }
 
+// Run the job
+func runJob(value string, jobsDone chan bool) {
+	fmt.Printf("(%s)", value)
+	time.Sleep(time.Second)
+	jobsDone <- true
+}
+
 func main() {
 
 	jobsStarted := make(chan string)
@@ -69,11 +76,7 @@ func main() {
 			}
 
 			// On démarre la tache en parallèle avec le message
-			go func(value string) {
-				fmt.Printf("(%s)", value)
-				time.Sleep(time.Second)
-				jobsDone <- true
-			}(i)
+			go runJob(i, jobsDone)
 
 			// On indique qu'on a démarré 1 tache de plus.
 			jobs++
