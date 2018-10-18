@@ -1,18 +1,21 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
-	"time"
+	"syscall"
 )
 
 const (
 	maxRoutines = 3
 	queuePath   = "queue"
+	jobScript   = "task.sh"
 )
 
 // ListenDir vérifie le contenu d'un répertoire et transmet l'ID extrait du fichier.
@@ -53,8 +56,34 @@ func ListenDir(jobsStarted chan string) {
 
 // Run the job
 func runJob(value string, jobsDone chan bool) {
-	fmt.Printf("(%s)", value)
-	time.Sleep(time.Second)
+
+	retryNum := 3
+	for retryNum > 0 {
+		task := exec.Command("bash", jobScript, value)
+		outReader, _ := task.StdoutPipe()
+
+		go func() {
+			outScanner := bufio.NewScanner(outReader)
+			for outScanner.Scan() {
+				fmt.Println(outScanner.Text())
+			}
+		}()
+
+		fmt.Printf("Trying job %s (%d/3)\n", value, 4-retryNum)
+		task.Run()
+
+		if status := task.ProcessState.Sys().(syscall.WaitStatus); status.ExitStatus() != 0 {
+			retryNum--
+			if retryNum == 0 {
+				fmt.Printf("Unable to run task %s\n", value)
+			} else {
+				fmt.Printf("Retrying job %s (%d/3)\n", value, 4-retryNum)
+			}
+			continue
+		}
+		fmt.Printf("Job %s executed successfully.\n", value)
+		break
+	}
 	jobsDone <- true
 }
 
